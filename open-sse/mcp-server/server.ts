@@ -40,6 +40,8 @@ import {
   getSessionSnapshotInput,
   dbHealthCheckInput,
   syncPricingInput,
+  cacheStatsInput,
+  cacheFlushInput,
 } from "./schemas/tools.ts";
 import { startMcpHeartbeat } from "./runtimeHeartbeat.ts";
 
@@ -62,9 +64,12 @@ import {
   handleGetSessionSnapshot,
   handleDbHealthCheck,
   handleSyncPricing,
+  handleCacheStats,
+  handleCacheFlush,
 } from "./tools/advancedTools.ts";
 import { memoryTools } from "./tools/memoryTools.ts";
 import { skillTools } from "./tools/skillTools.ts";
+import { compressionTools } from "./tools/compressionTools.ts";
 import { normalizeQuotaResponse } from "../../src/shared/contracts/quota.ts";
 import { resolveOmniRouteBaseUrl } from "../../src/shared/utils/resolveOmniRouteBaseUrl.ts";
 
@@ -79,6 +84,8 @@ const MCP_ALLOWED_SCOPES = new Set(
     .map((s) => s.trim())
     .filter(Boolean)
 );
+const TOTAL_MCP_TOOL_COUNT =
+  MCP_TOOLS.length + Object.keys(memoryTools).length + Object.keys(skillTools).length;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -803,6 +810,28 @@ export function createMcpServer(): McpServer {
     )
   );
 
+  server.registerTool(
+    "omniroute_cache_stats",
+    {
+      description:
+        "Returns cache statistics including semantic cache hit rate, prompt cache metrics by provider, and idempotency layer stats.",
+      inputSchema: cacheStatsInput,
+    },
+    withScopeEnforcement("omniroute_cache_stats", () => handleCacheStats())
+  );
+
+  server.registerTool(
+    "omniroute_cache_flush",
+    {
+      description:
+        "Flush cache entries. Provide signature to invalidate a single entry, model to invalidate all entries for a model, or omit both to clear all.",
+      inputSchema: cacheFlushInput,
+    },
+    withScopeEnforcement("omniroute_cache_flush", (args) =>
+      handleCacheFlush(cacheFlushInput.parse(args))
+    )
+  );
+
   // ── Memory Tools ──────────────────────────────
   Object.values(memoryTools).forEach((toolDef) => {
     server.registerTool(
@@ -849,6 +878,29 @@ export function createMcpServer(): McpServer {
     );
   });
 
+  // ── Compression Tools ─────────────────────────
+  Object.values(compressionTools).forEach((toolDef) => {
+    server.registerTool(
+      toolDef.name,
+      {
+        description: toolDef.description,
+        // @ts-ignore: dynamic zod access
+        inputSchema: toolDef.inputSchema,
+      },
+      withScopeEnforcement(toolDef.name, async (args) => {
+        try {
+          const parsedArgs = toolDef.inputSchema.parse(args ?? {});
+          // @ts-ignore: handler expected specific object
+          const result = await toolDef.handler(parsedArgs);
+          return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { content: [{ type: "text" as const, text: `Error: ${msg}` }], isError: true };
+        }
+      })
+    );
+  });
+
   return server;
 }
 
@@ -866,7 +918,7 @@ export async function startMcpStdio(): Promise<void> {
     version,
     scopesEnforced: MCP_ENFORCE_SCOPES,
     allowedScopes: Array.from(MCP_ALLOWED_SCOPES),
-    toolCount: MCP_TOOLS.length,
+    toolCount: TOTAL_MCP_TOOL_COUNT,
   });
   const stopHeartbeatOnce = () => {
     stopHeartbeat();
