@@ -220,9 +220,11 @@ export class BaseExecutor {
   buildHeaders(
     credentials: ProviderCredentials,
     stream = true,
-    clientHeaders?: Record<string, string> | null
+    clientHeaders?: Record<string, string> | null,
+    model?: string
   ): Record<string, string> {
     void clientHeaders;
+    void model;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...this.config.headers,
@@ -290,6 +292,9 @@ export class BaseExecutor {
           return tool;
         });
       }
+
+      // Fix #1884: Cursor sends prompt_cache_retention which breaks strict upstream endpoints
+      delete cloned.prompt_cache_retention;
 
       // Also clean up top level optional fields that commonly cause issues when empty
       const optionalKeys = ["user", "stop", "seed", "response_format"];
@@ -442,7 +447,7 @@ export class BaseExecutor {
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, activeCredentials);
-      const headers = this.buildHeaders(activeCredentials, stream, clientHeaders);
+      const headers = this.buildHeaders(activeCredentials, stream, clientHeaders, model);
       applyConfiguredUserAgent(headers, activeCredentials?.providerSpecificData);
 
       const ccRequestDefaults = isClaudeCodeCompatible(this.provider)
