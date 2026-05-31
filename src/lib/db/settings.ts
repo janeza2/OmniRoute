@@ -33,7 +33,7 @@ const PROXY_RESOLUTION_CACHE_MAX_ENTRIES = 100;
 let proxyConfigGeneration = 0;
 const proxyResolutionCache = new Map<string, ProxyResolutionCacheEntry>();
 
-function bumpProxyConfigGeneration() {
+export function bumpProxyConfigGeneration() {
   proxyConfigGeneration++;
   proxyResolutionCache.clear();
 }
@@ -99,9 +99,15 @@ export async function getSettings() {
     hideEndpointCloudflaredTunnel: false,
     hideEndpointTailscaleFunnel: false,
     hideEndpointNgrokTunnel: false,
+    autoRefreshProviderQuota: false,
+    autoRefreshProviderQuotaInterval: 180,
     comboConfigMode: "guided",
     codexServiceTier: { enabled: false },
-    claudeFastMode: { enabled: false, supportedModels: ["claude-opus-4-7", "claude-opus-4-6"] },
+    claudeFastMode: {
+      enabled: false,
+      supportedModels: ["claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6"],
+    },
+    codexSessionAffinityTtlMs: 0,
     alwaysPreserveClientCache: "auto",
     idempotencyWindowMs: 5000,
     wsAuth: false,
